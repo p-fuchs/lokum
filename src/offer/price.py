@@ -1,14 +1,22 @@
+import enum
 import re
 
 from pydantic import BaseModel
 
-_CURRENCY_MAP: dict[str, str] = {
-    "zł": "PLN",
-    "pln": "PLN",
-    "eur": "EUR",
-    "€": "EUR",
-    "usd": "USD",
-    "$": "USD",
+
+class Currency(enum.Enum):
+    PLN = "PLN"
+    EUR = "EUR"
+    USD = "USD"
+
+
+_CURRENCY_MAP: dict[str, Currency] = {
+    "zł": Currency.PLN,
+    "pln": Currency.PLN,
+    "eur": Currency.EUR,
+    "€": Currency.EUR,
+    "usd": Currency.USD,
+    "$": Currency.USD,
 }
 
 _CURRENCY_PATTERN = re.compile(
@@ -22,7 +30,7 @@ _NUMBER_PATTERN = re.compile(r"(\d[\d\s,.]*\d|\d)")
 class ParsedPrice(BaseModel):
     raw: str
     amount: float | None = None
-    currency: str | None = None
+    currency: Currency | None = None
     notes: str | None = None
 
 
@@ -57,7 +65,7 @@ def parse_price(raw: str) -> ParsedPrice:
         remaining = remaining[: number_match.start()] + remaining[number_match.end() :]
 
     # Extract currency
-    currency: str | None = None
+    currency: Currency | None = None
     currency_match = _CURRENCY_PATTERN.search(remaining)
     if currency_match:
         currency = _CURRENCY_MAP[currency_match.group(0).lower()]
