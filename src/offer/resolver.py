@@ -1,15 +1,19 @@
 from datetime import datetime, timezone
 from typing import Sequence
+from uuid import UUID
 
 import asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.offer.models import Offer, OfferSource
+from src.base.maintenance import MaintenanceData
+from src.offer.consolidation import consolidate_offer
+from src.offer.models import Offer, OfferRawInfo, OfferSource
 from src.offer.price import parse_price
 from src.scraping import create_engine
 from src.scraping.interface import SearchParams, SearchResult
+from src.scraping.pipeline import PipelineItem
 
 
 async def resolve_offers(
@@ -85,3 +89,101 @@ async def search_and_resolve(
     )
     all_results = [r for results in search_results for r in results]
     return await resolve_offers(session, all_results)
+
+
+async def persist_pipeline_results(
+    session: AsyncSession,
+    items: Sequence[PipelineItem],
+) -> list[Offer]:
+    """
+    Persist pipeline results: create/update OfferRawInfo and consolidate Offer.
+
+    For each PipelineItem (which references an existing OfferSource by ID):
+    1. Load OfferSource + parent Offer
+    2. Create or update OfferRawInfo from ScrapingResult + EnrichmentResult
+    3. Run consolidation to update Offer from all its OfferRawInfo records
+    """
+    if not items:
+        return []
+
+    # Load all OfferSources with their Offers
+    source_ids = [item.offer_source_id for item in items]
+    stmt = (
+        select(OfferSource)
+        .where(OfferSource.id.in_(source_ids))
+        .options(selectinload(OfferSource.offer))
+    )
+    sources = (await session.execute(stmt)).scalars().all()
+    sources_by_id = {s.id: s for s in sources}
+
+    now = datetime.now(timezone.utc)
+    offers_to_consolidate: dict[UUID, Offer] = {}
+
+    for item in items:
+        source = sources_by_id.get(item.offer_source_id)
+        if source is None:
+            continue
+
+        # Load or create OfferRawInfo
+        raw_info = source.raw_info
+        if raw_info is None:
+            raw_info = OfferRawInfo(offer_source_id=source.id)
+            session.add(raw_info)
+            source.raw_info = raw_info
+
+        # Update from ScrapingResult
+        if item.scraping_result is not None:
+            sr = item.scraping_result
+            raw_info.title = sr.title
+            raw_info.description = sr.description
+            raw_info.price = sr.price
+            raw_info.price_currency = sr.price_currency
+            raw_info.admin_rent = sr.admin_rent
+            raw_info.admin_rent_currency = sr.admin_rent_currency
+            raw_info.area = sr.area
+            raw_info.rooms = sr.rooms
+            raw_info.address = sr.address
+            raw_info.floor = sr.floor
+            raw_info.furnished = sr.furnished
+            raw_info.pets_allowed = sr.pets_allowed
+            raw_info.elevator = sr.elevator
+            raw_info.parking = sr.parking
+            raw_info.building_type = sr.building_type
+            raw_info.photo_urls = list(sr.photo_urls)
+            raw_info.external_id = sr.external_id
+            raw_info.scraped_at = now
+
+        # Update from EnrichmentResult
+        if item.enrichment_result is not None:
+            er = item.enrichment_result
+            raw_info.summary = er.summary
+            raw_info.enriched_address = er.address
+            raw_info.enriched_rent = er.costs.rent
+            raw_info.enriched_rent_currency = er.costs.rent_currency
+            raw_info.enriched_admin_rent = er.costs.admin_rent
+            raw_info.enriched_admin_rent_currency = er.costs.admin_rent_currency
+            raw_info.total_monthly_cost = er.costs.total_monthly
+            raw_info.total_monthly_cost_currency = er.costs.total_monthly_currency
+            raw_info.enriched_at = now
+
+            # Store maintenance data from notes
+            if er.notes:
+                raw_info.maintenance_data = MaintenanceData.model_validate_json(
+                    er.notes
+                )
+
+        # Mark offer for consolidation
+        offers_to_consolidate[source.offer_id] = source.offer
+
+    # Consolidate all affected offers
+    for offer in offers_to_consolidate.values():
+        # Load all raw infos for this offer
+        raw_info_stmt = (
+            select(OfferRawInfo)
+            .join(OfferSource, OfferRawInfo.offer_source_id == OfferSource.id)
+            .where(OfferSource.offer_id == offer.id)
+        )
+        raw_infos = (await session.execute(raw_info_stmt)).scalars().all()
+        consolidate_offer(offer, raw_infos)
+
+    return list(offers_to_consolidate.values())

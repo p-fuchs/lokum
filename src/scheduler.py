@@ -1,19 +1,22 @@
 import logging
 import traceback
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from src.base.db import async_session
-from src.offer.resolver import resolve_offers
+from src.offer.models import OfferSource, OfferSourceType, OfferRawInfo
+from src.offer.resolver import persist_pipeline_results, resolve_offers
 from src.query.executor import get_pending_queries
 from src.query.models import Query, QueryResult
-from src.scraping import create_engine
+from src.scraping import create_enricher, create_engine, create_scraper
 from collections.abc import Sequence
 
 from src.scraping.interface import SearchEngineType, SearchParams, SearchResult
+from src.scraping.pipeline import PipelineItem, run_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -108,3 +111,92 @@ async def run_pending_queries() -> None:
                 query.last_error_at = now
 
         await session.commit()
+
+
+@dataclass(frozen=True)
+class _PendingScrape:
+    """DTO for an OfferSource that needs scraping."""
+
+    offer_source_id: UUID
+    url: str
+    source_type: OfferSourceType
+
+
+async def run_pending_scrapes() -> None:
+    """
+    Run the scraping + enrichment pipeline for OfferSources needing work.
+
+    Three phases:
+    1. Fetch OfferSources needing work → DTOs (short DB session)
+       - No OfferRawInfo exists
+       - OR OfferRawInfo.scraped_at older than 2 weeks
+    2. Pipeline: scrape + enrich each (no DB session)
+    3. Persist OfferRawInfo + consolidate Offer (short DB session)
+    """
+    staleness_threshold = timedelta(weeks=2)
+
+    # Phase 1: Fetch OfferSources needing work
+    async with async_session() as session:
+        now = datetime.now(timezone.utc)
+        cutoff = now - staleness_threshold
+
+        # Find OfferSources without OfferRawInfo or with stale data
+        stmt = (
+            select(OfferSource)
+            .outerjoin(OfferRawInfo)
+            .where(
+                (OfferRawInfo.id.is_(None))  # No raw info
+                | (OfferRawInfo.scraped_at < cutoff)  # Stale
+            )
+            .options(selectinload(OfferSource.raw_info))
+        )
+        sources = (await session.execute(stmt)).scalars().all()
+
+        pending = [
+            _PendingScrape(
+                offer_source_id=s.id,
+                url=s.url,
+                source_type=s.source_type,
+            )
+            for s in sources
+        ]
+
+    if not pending:
+        return
+
+    logger.info("Found %d OfferSources needing scraping", len(pending))
+
+    # Phase 2: Run pipeline (no DB session during HTTP/LLM work)
+    items = [
+        PipelineItem(
+            url=ps.url,
+            source_type=ps.source_type,
+            offer_source_id=ps.offer_source_id,
+        )
+        for ps in pending
+    ]
+
+    # Create engines once for all items (they're stateless)
+    scraper = create_scraper(OfferSourceType.OLX)  # TODO: support multiple types
+    enricher = create_enricher()
+
+    try:
+        processed_items = await run_pipeline(items, scraper, enricher)
+    except Exception:
+        logger.exception("Pipeline execution failed")
+        return
+
+    # Phase 3: Persist results
+    async with async_session() as session:
+        try:
+            offers = await persist_pipeline_results(session, processed_items)
+            await session.commit()
+            logger.info(
+                "Scraping pipeline completed: %d items processed, %d offers updated",
+                len(processed_items),
+                len(offers),
+            )
+        except Exception:
+            await session.rollback()
+            logger.exception("Failed to persist pipeline results")
+            raise

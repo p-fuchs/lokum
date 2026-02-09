@@ -89,6 +89,12 @@ class OlxOfferScraper(ScrapingEngine):
             address=address,
             photo_urls=photo_urls,
             external_id=str(ad["id"]) if "id" in ad else None,
+            floor=_parse_floor(params.get("floor")),
+            furnished=_parse_yes_no(params.get("furnished")),
+            pets_allowed=_parse_tak_nie(params.get("pets_allowed")),
+            elevator=_parse_yes_no(params.get("elevator")),
+            parking=params.get("parking"),
+            building_type=params.get("building_type"),
         )
 
     @staticmethod
@@ -106,6 +112,18 @@ class OlxOfferScraper(ScrapingEngine):
                 result["rent_raw"] = value
             elif key == "rooms":
                 result["rooms"] = normalized
+            elif key == "floor_select":
+                result["floor"] = normalized
+            elif key == "furniture":
+                result["furnished"] = normalized
+            elif key == "pets":
+                result["pets_allowed"] = normalized
+            elif key == "winda":
+                result["elevator"] = normalized
+            elif key == "parking":
+                result["parking"] = value
+            elif key == "builttype":
+                result["building_type"] = value
 
         return result
 
@@ -136,3 +154,34 @@ def _parse_float(value: str | None) -> float | None:
         return float(value)
     except ValueError:
         return None
+
+
+def _parse_floor(value: str | None) -> int | None:
+    """Parse floor from normalized value like 'floor_4' to 4."""
+    if value is None:
+        return None
+    if value.startswith("floor_"):
+        try:
+            return int(value[6:])
+        except ValueError:
+            return None
+    return None
+
+
+def _parse_yes_no(value: str | None) -> bool | None:
+    """Parse 'yes'/'no' to bool."""
+    if value is None:
+        return None
+    return value.lower() == "yes"
+
+
+def _parse_tak_nie(value: str | None) -> bool | None:
+    """Parse 'Tak'/'Nie' (Polish yes/no) to bool."""
+    if value is None:
+        return None
+    value_lower = value.lower()
+    if value_lower == "tak":
+        return True
+    elif value_lower == "nie":
+        return False
+    return None

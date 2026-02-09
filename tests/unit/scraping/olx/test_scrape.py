@@ -87,6 +87,30 @@ class TestParseAd:
     def test_photo_urls_are_tuple(self, result) -> None:
         assert isinstance(result.photo_urls, tuple)
 
+    def test_floor(self, result) -> None:
+        # May be None if not present in fixture
+        assert result.floor is None or isinstance(result.floor, int)
+
+    def test_furnished(self, result) -> None:
+        # May be None if not present in fixture
+        assert result.furnished is None or isinstance(result.furnished, bool)
+
+    def test_pets_allowed(self, result) -> None:
+        # May be None if not present in fixture
+        assert result.pets_allowed is None or isinstance(result.pets_allowed, bool)
+
+    def test_elevator(self, result) -> None:
+        # May be None if not present in fixture
+        assert result.elevator is None or isinstance(result.elevator, bool)
+
+    def test_parking(self, result) -> None:
+        # May be None if not present in fixture
+        assert result.parking is None or isinstance(result.parking, str)
+
+    def test_building_type(self, result) -> None:
+        # May be None if not present in fixture
+        assert result.building_type is None or isinstance(result.building_type, str)
+
 
 class TestParseParams:
     def test_extracts_known_keys(self, scraper: OlxOfferScraper) -> None:
@@ -101,10 +125,30 @@ class TestParseParams:
         assert result["rent_raw"] == "300 zł"
         assert result["rooms"] == "one"
 
+    def test_extracts_new_params(self, scraper: OlxOfferScraper) -> None:
+        params = [
+            {"key": "floor_select", "value": "Piętro 4", "normalizedValue": "floor_4"},
+            {"key": "furniture", "value": "Tak", "normalizedValue": "yes"},
+            {"key": "pets", "value": "Nie", "normalizedValue": "Nie"},
+            {"key": "winda", "value": "Tak", "normalizedValue": "Tak"},
+            {"key": "parking", "value": "Garaż", "normalizedValue": "garage"},
+            {"key": "builttype", "value": "Blok", "normalizedValue": "block"},
+        ]
+        result = scraper._parse_params(params)
+        assert result["floor"] == "floor_4"
+        assert result["furnished"] == "yes"
+        assert result["pets_allowed"] == "Nie"
+        assert result["elevator"] == "Tak"
+        assert result["parking"] == "Garaż"
+        assert result["building_type"] == "Blok"
+
     def test_ignores_unknown_keys(self, scraper: OlxOfferScraper) -> None:
         params = [
-            {"key": "winda", "value": "Tak", "normalizedValue": "Tak"},
-            {"key": "furniture", "value": "Tak", "normalizedValue": "yes"},
+            {
+                "key": "unknown_key",
+                "value": "some value",
+                "normalizedValue": "normalized",
+            },
         ]
         result = scraper._parse_params(params)
         assert result == {}
@@ -153,3 +197,63 @@ class TestCleanDescription:
 
     def test_empty_string(self, scraper: OlxOfferScraper) -> None:
         assert scraper._clean_description("") == ""
+
+
+class TestParseFloor:
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("floor_1", 1),
+            ("floor_4", 4),
+            ("floor_10", 10),
+            ("parter", None),
+            (None, None),
+            ("", None),
+        ],
+    )
+    def test_parse_floor(self, value, expected) -> None:
+        from src.scraping.olx.scrape import _parse_floor
+
+        assert _parse_floor(value) == expected
+
+
+class TestParseYesNo:
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("yes", True),
+            ("Yes", True),
+            ("YES", True),
+            ("no", False),
+            ("No", False),
+            ("NO", False),
+            (None, None),
+            ("", False),
+            ("other", False),
+        ],
+    )
+    def test_parse_yes_no(self, value, expected) -> None:
+        from src.scraping.olx.scrape import _parse_yes_no
+
+        assert _parse_yes_no(value) == expected
+
+
+class TestParseTakNie:
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("Tak", True),
+            ("tak", True),
+            ("TAK", True),
+            ("Nie", False),
+            ("nie", False),
+            ("NIE", False),
+            (None, None),
+            ("", None),
+            ("other", None),
+        ],
+    )
+    def test_parse_tak_nie(self, value, expected) -> None:
+        from src.scraping.olx.scrape import _parse_tak_nie
+
+        assert _parse_tak_nie(value) == expected
