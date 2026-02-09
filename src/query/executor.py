@@ -14,14 +14,19 @@ async def get_pending_queries(session: AsyncSession) -> list[Query]:
     """Return active queries that are due for execution."""
     now = datetime.now(timezone.utc)
 
-    stmt = select(Query).where(
-        Query.is_active.is_(True),
-        or_(
-            Query.last_run_at.is_(None),
-            Query.last_run_at
-            < now - func.make_interval(0, 0, 0, 0, Query.run_interval_hours),
-        ),
+    stmt = (
+        select(Query)
+        .where(
+            Query.is_active.is_(True),
+            or_(
+                Query.last_run_at.is_(None),
+                Query.last_run_at
+                < now - func.make_interval(0, 0, 0, 0, Query.run_interval_hours),
+            ),
+        )
+        .limit(20)
     )
+
     return list((await session.execute(stmt)).scalars().all())
 
 

@@ -26,6 +26,8 @@ class Query(BaseDbModel):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     run_interval_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
     last_run_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="queries")
     results: Mapped[list[QueryResult]] = relationship(back_populates="query")

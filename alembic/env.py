@@ -8,6 +8,8 @@ from alembic import context
 
 from src.base.models import BaseDbModel
 from src.offer.models import Offer, OfferSource  # noqa: F401 — register models
+from src.user.models import User  # noqa: F401 — register models
+from src.query.models import Query, QueryResult  # noqa: F401 — register models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -23,6 +25,7 @@ if config.config_file_name is not None:
 # runs synchronously, so we strip the async driver prefix.
 db_uri = os.environ["LOKUM_DATABASE_URI"]
 db_uri = db_uri.replace("sqlite+aiosqlite:", "sqlite:")
+db_uri = db_uri.replace("postgresql+asyncpg:", "postgresql+psycopg2:")
 config.set_main_option("sqlalchemy.url", db_uri)
 
 target_metadata = BaseDbModel.metadata

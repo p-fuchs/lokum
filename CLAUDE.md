@@ -51,3 +51,19 @@ OLX implementation (`src/scraping/olx/`):
 - All scraping engines receive an `httpx.AsyncClient` via `create()`, not `__init__` directly.
 - Tests live in `tests/unit/` and `tests/integration/`. HTML fixtures in `tests/fixtures/`. Shared fixtures in `tests/conftest.py`.
 - pytest runs with `asyncio_mode = "auto"` (no need for `@pytest.mark.asyncio`).
+- **SQLAlchemy ORM objects are bound to the session that loaded them.** Never use an ORM object after its session is closed — access to attributes (especially lazy-loaded) will fail. When data needs to cross session boundaries, map it to a plain DTO (frozen dataclass) while the session is still open.
+- **Keep DB sessions short — never hold one open during long-running work** (HTTP requests, scraping, external API calls). Pattern: open session → fetch data → map to DTOs → close session → do slow work → open new session → write results. See `src/scheduler.py` for the reference implementation.
+- **Always run `uv run mypy .` after making changes** and fix any type errors before considering the task done.
+- **Always consider adding tests** for new or changed code. Tests should cover the happy path and key edge cases. Router tests use `httpx.AsyncClient` with `ASGITransport` and dependency overrides.
+
+## API & Scheduler (dirty notes)
+
+- FastAPI app in `src/app.py`, run with `./lokum.py app` or `uv run uvicorn src.app:app --reload`
+- Mock auth via `X-User: name:email` header — auto-creates users, defined in `src/auth.py`
+- Session dependency in `src/base/dependencies.py` (auto-commit/rollback)
+- Query CRUD router in `src/query/router.py`: GET/POST /queries, GET/PATCH/DELETE /queries/{id}, GET /queries/{id}/results
+- APScheduler v3 (AsyncIOScheduler) runs in FastAPI lifespan, interval via LOKUM_SCHEDULER_INTERVAL_MINUTES (default 5)
+- Scheduler logic in `src/scheduler.py`: per-query error handling, stores last_error on Query model
+- Docker: `docker-compose.yml` has postgres only, app runs locally
+- Management: `python lokum.py` — click CLI with subcommands: app, db up/down/migrate/revision, test, lint
+- DB URI: LOKUM_DATABASE_URI=postgresql+asyncpg://lokum:lokum@localhost:5432/lokum
