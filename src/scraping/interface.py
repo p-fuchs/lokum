@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Self, Sequence
 
 import httpx
@@ -54,6 +54,12 @@ class ScrapingResult:
     address: str | None = None
     photo_urls: tuple[str, ...] = ()
     external_id: str | None = None
+    floor: int | None = None
+    furnished: bool | None = None
+    pets_allowed: bool | None = None
+    elevator: bool | None = None
+    parking: str | None = None
+    building_type: str | None = None
 
 
 class SearchEngine(ABC):
@@ -72,3 +78,38 @@ class ScrapingEngine(ABC):
 
     @abstractmethod
     async def scrape(self, request: ScrapingRequest) -> ScrapingResult: ...
+
+
+@dataclass(frozen=True)
+class CostBreakdown:
+    rent: float | None = None
+    rent_currency: Currency | None = None
+    admin_rent: float | None = None
+    admin_rent_currency: Currency | None = None
+    total_monthly: float | None = None
+    total_monthly_currency: Currency | None = None
+
+
+@dataclass(frozen=True)
+class EnrichmentResult:
+    summary: str
+    address: str | None = None
+    costs: CostBreakdown = field(default_factory=CostBreakdown)
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
+class GeocodingResult:
+    latitude: float
+    longitude: float
+    formatted_address: str | None = None
+
+
+class EnrichmentEngine(ABC):
+    @abstractmethod
+    async def enrich(self, scraping_result: ScrapingResult) -> EnrichmentResult: ...
+
+
+class GeocodingEngine(ABC):
+    @abstractmethod
+    async def geocode(self, address: str) -> GeocodingResult | None: ...

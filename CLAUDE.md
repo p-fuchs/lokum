@@ -48,6 +48,7 @@ OLX implementation (`src/scraping/olx/`):
 
 - Interface types are **frozen dataclasses**. Pydantic models are used only for serialization (`ParsedPrice`).
 - HTML parsing uses **regex** (no BeautifulSoup dependency).
+- Imports are to be present at the top of a module!
 - All scraping engines receive an `httpx.AsyncClient` via `create()`, not `__init__` directly.
 - Tests live in `tests/unit/` and `tests/integration/`. HTML fixtures in `tests/fixtures/`. Shared fixtures in `tests/conftest.py`.
 - pytest runs with `asyncio_mode = "auto"` (no need for `@pytest.mark.asyncio`).

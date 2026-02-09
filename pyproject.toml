@@ -12,6 +12,8 @@ dependencies = [
     "fake-useragent>=2.2.0",
     "fastapi>=0.115",
     "httpx>=0.28.1,<1.0",
+    "langchain-core>=0.3",
+    "langchain-google-genai>=2.0",
     "mypy>=1.19.1",
     "psycopg2-binary>=2.9",
     "pydantic>=2.12.5",
@@ -30,6 +32,7 @@ dev = [
 asyncio_mode = "auto"
 
 [tool.mypy]
+exclude = ["alembic/versions/"]
 
 [[tool.mypy.overrides]]
 module = "testcontainers.*"
@@ -38,3 +41,11 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["apscheduler", "apscheduler.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["langchain_core.*", "langchain_google_genai.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "alembic.*"
+ignore_errors = true

@@ -21,6 +21,11 @@ def olx_offer_html() -> str:
 
 
 @pytest.fixture
+def olx_offer_wola_html() -> str:
+    return (FIXTURES_DIR / "olx_offer_wola.html").read_text()
+
+
+@pytest.fixture
 def olx_search_html() -> str:
     return (FIXTURES_DIR / "olx_search.html").read_text()
 
